@@ -1,3 +1,4 @@
+
 Meteor.Paypal = {
 
   account_options: {},
@@ -12,28 +13,25 @@ Meteor.Paypal = {
   config: function(options){
     this.account_options = options;
   },
-  payment_json: function(){
+  payment_json: function(method){
+    var payer = (method === 'credit_card' ? 
+                {"payment_method": "credit_card","funding_instruments": []} : 
+                {"payment_method": "paypal"});
+
     return {
       "intent": "sale",
-      "payer": {
-        "payment_method": "credit_card",
-        "funding_instruments": []},
+      "payer": payer,
       "transactions": []
     };
   },
   //parseCardData splits up the card data and puts it into a paypal friendly format.
   parseCardData: function(data){
-    var first_name = '', last_name = '';
-    if (data.name){
-      first_name = data.name.split(' ')[0];
-      last_name = data.name.split(' ')[1]
-    }
     return {
       credit_card: {
         type: data.type,
         number: data.number,
-        first_name: first_name,
-        last_name: last_name,
+        first_name: data.first_name,
+        last_name: data.last_name,
         cvv2: data.cvv2,
         expire_month: data.expire_month,
         expire_year: data.expire_year
@@ -41,11 +39,31 @@ Meteor.Paypal = {
   },
   //parsePaymentData splits up the card data and gets it into a paypal friendly format.
   parsePaymentData: function(data){
-    return {amount: {total: data.total, currency: data.currency}};
+    return {
+      item_list: {
+        items: data.products,   // name, price, currency: 'USD', quantity
+        shipping_address: {
+          'recipient_name': data.shipping.recipient_name,
+          'type': data.shipping.type,
+          'line1': data.shipping.line1,
+          'line2': data.shipping.line2,
+          'city': data.shipping.city,
+          'country_code': data.shipping.country_code,
+          'postal_code': data.shipping.postal_code,
+          'state': data.shipping.state,
+          'phone': data.shipping.phone
+        }
+      },
+      amount: {
+        total: data.total, 
+        currency: data.currency
+      },
+      description: data.description
+    };
   }
 };
 
-if(Meteor.isServer){
+if (Meteor.isServer){
   Meteor.startup(function(){
     var paypal_sdk = Npm.require('paypal-rest-sdk');
     var Fiber = Npm.require('fibers');
@@ -53,9 +71,13 @@ if(Meteor.isServer){
     Meteor.methods({
       paypal_submit: function(transaction_type, cardData, paymentData){
         paypal_sdk.configure(Meteor.Paypal.account_options);
-        var payment_json = Meteor.Paypal.payment_json();
+        var payment_json = Meteor.Paypal.payment_json(cardData.method);
         payment_json.intent = transaction_type;
-        payment_json.payer.funding_instruments.push(Meteor.Paypal.parseCardData(cardData));
+
+        if (cardData.method === 'credit_card'){
+          payment_json.payer.funding_instruments.push(Meteor.Paypal.parseCardData(cardData));
+        }
+        
         payment_json.transactions.push(Meteor.Paypal.parsePaymentData(paymentData));
         var fut = new Future();
         this.unblock();
