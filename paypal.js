@@ -13,14 +13,10 @@ Meteor.Paypal = {
   config: function(options){
     this.account_options = options;
   },
-  payment_json: function(method){
-    var payer = (method === 'credit_card' ? 
-                {"payment_method": "credit_card","funding_instruments": []} : 
-                {"payment_method": "paypal"});
-
+  payment_json: function(){
     return {
       "intent": "sale",
-      "payer": payer,
+      "payer": {"payment_method": "credit_card","funding_instruments": []},
       "transactions": []
     };
   },
@@ -28,21 +24,23 @@ Meteor.Paypal = {
   parseCardData: function(data){
     return {
       credit_card: {
-        type: data.type,
-        number: data.number,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        cvv2: data.cvv2,
-        expire_month: data.expire_month,
-        expire_year: data.expire_year
+        'type': data.type,
+        'number': data.number,
+        'first_name': data.first_name,
+        'last_name': data.last_name,
+        'cvv2': data.cvv2,
+        'expire_month': data.expire_month,
+        'expire_year': data.expire_year
       }};
   },
   //parsePaymentData splits up the card data and gets it into a paypal friendly format.
   parsePaymentData: function(data){
     return {
       item_list: {
-        items: data.products,   // name, price, currency: 'USD', quantity
-        shipping_address: {
+        items: data.products,   // [{name, price, currency: 'USD', quantity}]
+        shipping_address: data.shipping 
+        /*
+        {
           'recipient_name': data.shipping.recipient_name,
           'type': data.shipping.type,
           'line1': data.shipping.line1,
@@ -52,7 +50,7 @@ Meteor.Paypal = {
           'postal_code': data.shipping.postal_code,
           'state': data.shipping.state,
           'phone': data.shipping.phone
-        }
+        }*/
       },
       amount: {
         total: data.total, 
@@ -71,13 +69,9 @@ if (Meteor.isServer){
     Meteor.methods({
       paypal_submit: function(transaction_type, cardData, paymentData){
         paypal_sdk.configure(Meteor.Paypal.account_options);
-        var payment_json = Meteor.Paypal.payment_json(cardData.method);
+        var payment_json = Meteor.Paypal.payment_json();
         payment_json.intent = transaction_type;
-
-        if (cardData.method === 'credit_card'){
-          payment_json.payer.funding_instruments.push(Meteor.Paypal.parseCardData(cardData));
-        }
-        
+        payment_json.payer.funding_instruments.push(Meteor.Paypal.parseCardData(cardData));
         payment_json.transactions.push(Meteor.Paypal.parsePaymentData(paymentData));
         var fut = new Future();
         this.unblock();
